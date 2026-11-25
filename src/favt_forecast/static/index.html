@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ограничения аэропортов</title>
+<style>
+  :root {
+    --bg: #121614;
+    --panel: #1c2420;
+    --line: #2c3832;
+    --text: #e7f0e8;
+    --muted: #8ea094;
+    --open: #7dcea0;
+    --restr: #e0b15a;
+    --closed: #e06a5c;
+    --accent: #d7e26a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.4 "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex;
+    gap: 16px;
+    align-items: flex-end;
+    justify-content: space-between;
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  h1 { font-size: 18px; font-weight: 600; margin: 0; letter-spacing: 0.01em; }
+  .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  button, select, input {
+    background: #101512;
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font: inherit;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  .shell { display: grid; grid-template-columns: 320px 1fr; min-height: calc(100vh - 74px); }
+  aside { border-right: 1px solid var(--line); padding: 12px; overflow: auto; max-height: calc(100vh - 74px); }
+  main { padding: 16px 20px 32px; overflow: auto; }
+  .filters { display: flex; gap: 8px; margin-bottom: 10px; }
+  .filters input, .filters select { width: 100%; }
+  .airport {
+    width: 100%;
+    text-align: left;
+    margin: 0 0 6px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px 8px;
+    padding: 8px;
+  }
+  .airport.on { border-color: var(--accent); }
+  .airport .place { font-weight: 600; }
+  .airport b { font-weight: 650; font-family: Consolas, "Cascadia Mono", monospace; letter-spacing: 0.04em; }
+  .meta { color: var(--muted); font-size: 12px; font-family: Consolas, "Cascadia Mono", monospace; }
+  .pill { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .OPEN { color: var(--open); }
+  .RESTRICTED { color: var(--restr); }
+  .CLOSED { color: var(--closed); }
+  .kpis { display: flex; gap: 18px; align-items: flex-end; margin: 8px 0 14px; }
+  .kpi { font-family: Consolas, "Cascadia Mono", monospace; font-size: 28px; }
+  .kpi span { display: block; color: var(--muted); font-size: 11px; font-family: "Segoe UI", sans-serif; letter-spacing: 0.04em; text-transform: uppercase; }
+  .heat-wrap { overflow-x: auto; margin-bottom: 8px; }
+  .heat { display: grid; gap: 2px; min-width: 760px; }
+  .hh, .hd { color: var(--muted); font-size: 10px; text-align: center; }
+  .hh { text-align: right; padding-right: 4px; line-height: 16px; }
+  .hd.past { color: #9ecfad; }
+  .hd.now { color: var(--accent); }
+  .cell { height: 16px; border: 0; padding: 0; border-radius: 2px; cursor: pointer; }
+  .cell:focus { outline: none; }
+  .cell.inferred { background-image: repeating-linear-gradient(135deg, transparent, transparent 3px, rgba(0,0,0,.4) 3px, rgba(0,0,0,.4) 4px); }
+  .cell.split { box-shadow: inset 2px 0 0 var(--accent); }
+  .cell.on { outline: 2px solid #fff; z-index: 2; }
+  svg.chart { width: 100%; height: 140px; background: #101512; border: 1px solid var(--line); border-radius: 4px; }
+  .legend { display: flex; gap: 14px; color: var(--muted); font-size: 12px; margin: 6px 0 16px; }
+  .sw { display: inline-block; width: 10px; height: 10px; margin-right: 4px; vertical-align: -1px; }
+  form.point { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; margin-bottom: 12px; }
+  label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+  .factors { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 16px; margin: 0 0 18px; }
+  .factors div { border-top: 1px solid var(--line); padding-top: 4px; }
+  .factors b { font-weight: 500; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  td, th { border-bottom: 1px solid var(--line); padding: 6px 4px; text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; }
+  .err { color: var(--closed); }
+  @media (max-width: 980px) {
+    .shell { grid-template-columns: 1fr; }
+    aside { max-height: 280px; border-right: 0; border-bottom: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Ограничения аэропортов РФ</h1>
+    <div class="sub" id="status">загрузка статуса…</div>
+  </div>
+  <div class="controls">
+    <label>автодолив<input id="auto" type="checkbox"></label>
+    <button id="sync" type="button">Долить сейчас</button>
+  </div>
+</header>
+<div class="shell">
+  <aside>
+    <div class="filters">
+      <select id="cluster"><option value="">все регионы</option></select>
+      <input id="q" placeholder="аэропорт">
+    </div>
+    <div id="list"></div>
+  </aside>
+  <main>
+    <div id="title">Аэропорт не выбран</div>
+    <div class="kpis" id="kpis"></div>
+    <div class="heat-wrap"><div class="heat" id="heat"></div></div>
+    <svg class="chart" id="chart" viewBox="0 0 336 100" preserveAspectRatio="none"></svg>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--open)"></i>P(открыт)</span>
+      <span><i class="sw" style="background:var(--restr)"></i>P(по согласованию)</span>
+      <span><i class="sw" style="background:var(--closed)"></i>P(закрыт)</span>
+      <span>часы по вертикали, дни по горизонтали. слева 7 суток факта, справа прогноз</span>
+    </div>
+    <form class="point" id="point">
+      <label>Аэропорт<input id="pq" placeholder="SVO / Шереметьево"></label>
+      <label>Момент Y, МСК<input id="py" type="datetime-local"></label>
+      <button type="submit">Вероятность в момент Y</button>
+    </form>
+    <div id="pointout"></div>
+    <div class="factors" id="factors"></div>
+    <h2 style="font-size:14px;font-weight:600">Последние распознанные события</h2>
+    <table>
+      <thead><tr><th>Время МСК</th><th>Аэропорт</th><th>Событие</th><th>Текст</th></tr></thead>
+      <tbody id="events"></tbody>
+    </table>
+  </main>
+</div>
+<script>
+const STATE = {OPEN: "открыт", RESTRICTED: "по согласованию", CLOSED: "закрыт"};
+let airports = [];
+let selected = null;
+let forecast = null;
+let pickedTs = null;
+let wasRunning = false;
+
+const $ = (id) => document.getElementById(id);
+
+function mskParts(iso) {
+  const d = new Date(new Date(iso).getTime() + 3 * 3600000);
+  const p = (n) => String(n).padStart(2, "0");
+  return {
+    y: d.getUTCFullYear(),
+    m: p(d.getUTCMonth() + 1),
+    d: p(d.getUTCDate()),
+    h: d.getUTCHours(),
+    min: p(d.getUTCMinutes()),
+    label: `${p(d.getUTCDate())}.${p(d.getUTCMonth() + 1)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`,
+    day: `${p(d.getUTCDate())}.${p(d.getUTCMonth() + 1)}`,
+  };
+}
+
+async function api(url, opts) {
+  const response = await fetch(url, opts);
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.detail || response.statusText);
+  return body;
+}
+
+function cellColor(open, restricted, closed) {
+  const poles = [
+    [62, 184, 96],
+    [228, 168, 36],
+    [214, 64, 52],
+  ];
+  const weights = [open, restricted, closed].map((value) => Math.pow(Math.max(0, value), 0.62));
+  const sum = weights.reduce((total, value) => total + value, 0) || 1;
+  const mixed = poles[0].map((_, channel) => (
+    weights.reduce((total, weight, index) => total + poles[index][channel] * weight, 0) / sum
+  ));
+  const mean = mixed.reduce((total, value) => total + value, 0) / mixed.length;
+  const rgb = mixed.map((value) => Math.round(Math.min(255, Math.max(0, mean + (value - mean) * 1.45))));
+  return `rgb(${rgb.join(",")})`;
+}
+
+function codeOf(row) {
+  return row.iata || row.icao;
+}
+
+function placeOf(row) {
+  if (!row.name || row.name.toLowerCase() === (row.city || "").toLowerCase()) return row.city || row.name || "";
+  return row.name;
+}
+
+function renderList() {
+  const cluster = $("cluster").value;
+  const needle = $("q").value.trim().toLowerCase();
+  const rows = airports.filter((row) => {
+    if (cluster && row.cluster !== cluster) return false;
+    if (!needle) return true;
+    return [row.label, row.icao, row.iata, row.city, row.name].join(" ").toLowerCase().includes(needle);
+  });
+  $("list").innerHTML = rows.map((row) => `
+    <button class="airport ${row.icao === selected ? "on" : ""}" data-icao="${row.icao}">
+      <span class="place">${row.label}</span>
+      <span class="pill ${row.current_state}">${STATE[row.current_state] || row.current_state}</span>
+      <span class="meta"><b>${codeOf(row)}</b> · 24ч ${Math.round(row.p_closed_24h * 100)}% · пик ${Math.round(row.peak_p_closed_24h * 100)}%</span>
+      <span class="meta">14д ${Math.round(row.p_closed_14d * 100)}%</span>
+    </button>
+  `).join("");
+  for (const button of $("list").querySelectorAll("button")) {
+    button.onclick = () => selectAirport(button.dataset.icao);
+  }
+}
+
+function renderForecast() {
+  if (!forecast) return;
+  const airport = forecast.airport;
+  $("title").textContent = `${codeOf(airport)} · ${placeOf(airport)} · сейчас ${STATE[forecast.current_state] || forecast.current_state}`;
+  const history = forecast.history || [];
+  const future = forecast.points;
+  const all = history.concat(future);
+  if (!pickedTs) pickedTs = future[0] ? future[0].ts : null;
+  const byDay = new Map();
+  for (const point of all) {
+    const parts = mskParts(point.ts);
+    if (!byDay.has(parts.day)) byDay.set(parts.day, new Map());
+    byDay.get(parts.day).set(parts.h, point);
+  }
+  const days = [...byDay.keys()];
+  $("heat").style.gridTemplateColumns = `28px repeat(${days.length}, minmax(22px, 1fr))`;
+  let html = `<div></div>`;
+  for (const day of days) {
+    const hours = byDay.get(day);
+    const observed = [...hours.values()].filter((point) => point.observed).length;
+    const kind = observed === 0 ? "hd" : observed === hours.size ? "hd past" : "hd now";
+    html += `<div class="${kind}">${day}</div>`;
+  }
+  const firstFutureDay = days.find((day) => [...byDay.get(day).values()].some((point) => !point.observed));
+  for (let hour = 0; hour < 24; hour++) {
+    html += `<div class="hh">${String(hour).padStart(2, "0")}</div>`;
+    for (const day of days) {
+      const point = byDay.get(day).get(hour);
+      if (!point) {
+        html += `<div></div>`;
+        continue;
+      }
+      const observed = !!point.observed;
+      const color = observed
+        ? observedColor(point.p_open, point.p_restricted, point.p_closed)
+        : cellColor(point.p_open, point.p_restricted, point.p_closed);
+      const classes = [
+        "cell",
+        point.ts === pickedTs ? "on" : "",
+        observed ? "past" : "",
+        point.inferred ? "inferred" : "",
+        !observed && day === firstFutureDay ? "split" : "",
+      ].filter(Boolean).join(" ");
+      const kind = observed ? (point.inferred ? "факт, конец домыслен" : "факт") : "прогноз";
+      html += `<button class="${classes}" data-ts="${point.ts}" title="${day} ${String(hour).padStart(2, "0")}:00 МСК · ${kind} · открыт ${Math.round(point.p_open * 100)}% · согл. ${Math.round(point.p_restricted * 100)}% · закрыт ${Math.round(point.p_closed * 100)}%" style="background:${color}"></button>`;
+    }
+  }
+  $("heat").innerHTML = html;
+  const noteFor = (point) => point.observed
+    ? (point.inferred ? "Факт. Конец интервала домыслен по таймауту 24 ч." : "Факт по ленте.")
+    : "";
+  const showPinned = () => {
+    const pinned = all.find((item) => item.ts === pickedTs);
+    if (pinned) {
+      showPoint(pinned, null);
+      $("pointout").textContent = noteFor(pinned);
+    }
+  };
+  for (const cell of $("heat").querySelectorAll(".cell")) {
+    const point = all.find((item) => item.ts === cell.dataset.ts);
+    cell.onmouseenter = () => {
+      showPoint(point, null);
+      $("pointout").textContent = noteFor(point);
+    };
+    cell.onclick = () => {
+      pickedTs = cell.dataset.ts;
+      const parts = mskParts(point.ts);
+      $("py").value = `${parts.y}-${parts.m}-${parts.d}T${String(parts.h).padStart(2, "0")}:${parts.min}`;
+      $("pq").value = forecast.airport.icao;
+      renderForecast();
+    };
+  }
+  $("heat").onmouseleave = showPinned;
+  const width = 1000;
+  const chart = future.map((point, index) => {
+    const x = future.length === 1 ? 0 : (index / (future.length - 1)) * width;
+    return {
+      x,
+      o: 100 - point.p_open * 100,
+      c: 100 - point.p_closed * 100,
+      r: 100 - point.p_restricted * 100,
+    };
+  });
+  const line = (key, color) => `<path d="${chart.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(2)},${p[key].toFixed(2)}`).join(" ")}" fill="none" stroke="${color}" stroke-width="1.6"/>`;
+  $("chart").setAttribute("viewBox", `0 0 ${width} 100`);
+  $("chart").innerHTML = line("o", "#3ea860") + line("r", "#e4a824") + line("c", "#d64034");
+  showPinned();
+}
+
+function observedColor(open, restricted, closed) {
+  if (closed >= restricted && closed >= open) return "rgb(196, 72, 64)";
+  if (restricted >= open) return "rgb(214, 158, 48)";
+  return "rgb(62, 168, 96)";
+}
+
+function showPoint(point, factors) {
+  const parts = mskParts(point.ts || point.target_ts);
+  const open = point.p_open ?? point.probabilities.OPEN;
+  const restricted = point.p_restricted ?? point.probabilities.RESTRICTED;
+  const closed = point.p_closed ?? point.probabilities.CLOSED;
+  $("kpis").innerHTML = `
+    <div class="kpi OPEN">${(open * 100).toFixed(1)}%<span>открыт</span></div>
+    <div class="kpi RESTRICTED">${(restricted * 100).toFixed(1)}%<span>по согласованию</span></div>
+    <div class="kpi CLOSED">${(closed * 100).toFixed(1)}%<span>закрыт · ${parts.label} МСК</span></div>`;
+  if (factors) {
+    $("factors").innerHTML = factors.map((factor) => `<div><b>${factor.display}</b><br>${factor.label}</div>`).join("");
+  }
+}
+
+async function selectAirport(icao) {
+  selected = icao;
+  $("pq").value = icao;
+  pickedTs = null;
+  renderList();
+  forecast = await api(`/api/forecast?airport=${encodeURIComponent(icao)}&horizon_hours=336`);
+  renderForecast();
+}
+
+async function loadAirports() {
+  const data = await api("/api/airports");
+  airports = data.airports;
+  const known = new Set();
+  const select = $("cluster");
+  const current = select.value;
+  for (const row of airports) {
+    if (known.has(row.cluster)) continue;
+    known.add(row.cluster);
+    if (![...select.options].some((opt) => opt.value === row.cluster)) {
+      const option = document.createElement("option");
+      option.value = row.cluster;
+      option.textContent = row.cluster_label;
+      select.appendChild(option);
+    }
+  }
+  select.value = current;
+  if (!selected && airports.length) {
+    const risky = [...airports].sort((a, b) => b.peak_p_closed_24h - a.peak_p_closed_24h)[0];
+    await selectAirport(risky.icao);
+  } else {
+    renderList();
+  }
+}
+
+async function loadEvents() {
+  const data = await api("/api/events?limit=25");
+  $("events").innerHTML = data.events.map((event) => `
+    <tr>
+      <td class="meta">${mskParts(event.event_time).label}</td>
+      <td><b>${event.iata || event.icao}</b><div class="meta">${event.name || event.label}</div></td>
+      <td class="${event.event_type}">${STATE[event.event_type] || event.event_type}</td>
+      <td>${event.snippet}</td>
+    </tr>`).join("");
+}
+
+function renderStatus(data) {
+  const sync = data.sync || {};
+  const model = data.model;
+  const bits = [
+    `сообщений ${data.messages}`,
+    `событий ${data.events}`,
+    `интервалов ${data.intervals}`,
+    data.backfill_complete ? "архив полный" : "архив дочитывается",
+  ];
+  if (sync.running) bits.push(`${sync.stage}: стр. ${sync.pages}, новых ${sync.new}`);
+  if (sync.error) bits.push(sync.error);
+  if (model) {
+    bits.push(`модель ${model.device || "?"} brier закр. ${(model.brier_closed_near ?? 0).toFixed(3)}`);
+    if (model.inference_ms_horizon != null) bits.push(`14д ${Math.round(model.inference_ms_horizon)} мс`);
+  } else bits.push("модель не обучена");
+  $("status").textContent = bits.join(" · ");
+  $("status").className = sync.error ? "sub err" : "sub";
+  $("auto").checked = !!data.auto_sync;
+  if (wasRunning && !sync.running) {
+    loadAirports().catch((error) => { $("status").textContent = error.message; });
+    loadEvents().catch(() => {});
+  }
+  wasRunning = !!sync.running;
+}
+
+async function refreshStatus() {
+  try {
+    renderStatus(await api("/api/status"));
+  } catch (error) {
+    $("status").textContent = error.message;
+  }
+}
+
+$("cluster").onchange = renderList;
+$("q").oninput = renderList;
+$("sync").onclick = async () => {
+  $("sync").disabled = true;
+  try {
+    await api("/api/sync", {method: "POST"});
+    await refreshStatus();
+  } catch (error) {
+    $("status").textContent = error.message;
+  } finally {
+    $("sync").disabled = false;
+  }
+};
+$("auto").onchange = async () => {
+  await api("/api/settings", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({auto_sync: $("auto").checked}),
+  });
+};
+$("point").onsubmit = async (event) => {
+  event.preventDefault();
+  const airport = $("pq").value.trim();
+  const when = $("py").value;
+  if (!airport || !when) return;
+  try {
+    const stamp = when.length === 16 ? `${when}:00` : when;
+    const result = await api(`/api/predict_point?airport=${encodeURIComponent(airport)}&target_ts=${encodeURIComponent(stamp + "+03:00")}`);
+    showPoint({
+      ts: result.target_ts,
+      p_open: result.probabilities.OPEN,
+      p_restricted: result.probabilities.RESTRICTED,
+      p_closed: result.probabilities.CLOSED,
+    }, result.factors);
+    $("pointout").textContent = result.source === "observed"
+      ? `Наблюдение по ленте${result.inferred ? ", конец интервала домыслен по таймауту 24 ч" : ""}. ${Math.round(result.inference_ms)} мс`
+      : `Модель, горизонт ${result.horizon_hours.toFixed(2)} ч. ${Math.round(result.inference_ms)} мс`;
+  } catch (error) {
+    $("pointout").textContent = error.message;
+  }
+};
+
+refreshStatus();
+loadEvents().catch((error) => { $("events").innerHTML = `<tr><td colspan="4">${error.message}</td></tr>`; });
+loadAirports().catch((error) => { $("title").textContent = error.message; });
+setInterval(refreshStatus, 15000);
+</script>
+</body>
+</html>

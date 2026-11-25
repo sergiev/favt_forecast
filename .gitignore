@@ -1,0 +1,17 @@
+data/
+catboost_info/
+*.cbm.tmp
+*.joblib.tmp
+
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+
+.venv/
+
+.DS_Store
+Thumbs.db

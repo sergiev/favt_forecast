@@ -1,0 +1,26 @@
+[project]
+name = "favt-forecast"
+version = "1.0.0"
+description = "Вероятностный прогноз ограничений аэропортов РФ по ленте @favt_info"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "beautifulsoup4>=4.12",
+    "catboost>=1.2",
+    "fastapi>=0.110",
+    "httpx>=0.27",
+    "numpy>=1.24",
+    "pydantic>=2",
+    "scikit-learn>=1.3",
+    "uvicorn>=0.27",
+]
+
+[project.scripts]
+favt-forecast = "favt_forecast.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+constraint-dependencies = ["fonttools>=4.22,<4.69"]
